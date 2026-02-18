@@ -1,0 +1,18 @@
+# Dependencies
+/node_modules
+
+# Alephium artifacts & cache
+/artifacts
+/.project.json
+/.ralph-lsp
+
+# Deployments history
+/deployments
+
+# Testing & build
+/coverage
+/dist
+
+# Misc
+.DS_Store
+*.pem

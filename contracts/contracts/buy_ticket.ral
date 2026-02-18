@@ -1,0 +1,3 @@
+TxScript BuyTicket(bomber: Bomber, amount: U256) {
+    let _ = bomber.buyTicket{callerAddress!() -> ALPH: amount}()
+}

@@ -1,0 +1,31 @@
+Interface IBomber {
+    @using(assetsInContract = true, checkExternalCaller = true)
+    pub fn claimFromTicket(ticketIndex: U256, owner: Address) -> U256
+}
+
+Contract Ticket(
+    bomberContractId: ByteVec,
+    owner: Address,
+    ticketIndex: U256,
+    mut claimed: Bool
+) {
+    event RewardsClaimed(owner: Address, ticketIndex: U256, amount: U256)
+
+    @using(assetsInContract = false, checkExternalCaller = false, updateFields = true)
+    pub fn claimRewards() -> () {
+        let caller = callerAddress!()
+        assert!(caller == owner, 0)
+        assert!(!claimed, 1)
+
+        claimed = true
+
+        let bomber = IBomber(bomberContractId)
+        let amount = bomber.claimFromTicket(ticketIndex, owner)
+
+        emit RewardsClaimed(owner, ticketIndex, amount)
+    }
+
+    pub fn getInfo() -> (Address, U256, Bool) {
+        return (owner, ticketIndex, claimed)
+    }
+}

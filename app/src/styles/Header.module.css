@@ -1,0 +1,65 @@
+.header {
+  background-color: #ffffff; /* Blanc pur pour trancher */
+  border-bottom: 1px solid #e2e8f0;
+  width: 100vw;              /* Force 100% de la largeur de vue */
+  display: flex;
+  justify-content: center;
+  padding: 0.75rem 0;
+  position: relative;
+  left: 50%;
+  right: 50%;
+  margin-left: -50vw;
+  margin-right: -50vw;
+}
+
+.container {
+  width: 100%;
+  max-width: 1200px;
+  padding: 0 2rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.logoGroup {
+  display: flex;
+  align-items: center;
+  gap: 2rem;
+}
+
+.logo {
+  color: var(--black);
+  font-size: 1.25rem;
+  font-weight: 700;
+  text-decoration: none;
+  letter-spacing: -0.5px;
+}
+
+.nav {
+  display: flex;
+  gap: 1.5rem;
+}
+
+.navLink {
+  color: #848e9c; /* Gris clair par défaut */
+  text-decoration: none;
+  font-size: 0.9rem;
+  font-weight: 500;
+  transition: color 0.2s;
+}
+
+.navLink:first-child {
+  color: var(--blue);
+}
+
+.navLink:hover {
+  color: var(--orange);
+}
+
+.walletSection :global(.alephium-connect-button) {
+  background-color: #ffffff !important;
+  color: #000000 !important;
+  border-radius: 4px !important;
+  font-weight: 600 !important;
+  padding: 6px 12px !important;
+}

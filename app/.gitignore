@@ -1,0 +1,40 @@
+# dependencies
+/node_modules
+/.pnp
+.pnp.js
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# SÉCURITÉ : Bloquer tous les fichiers d'environnement
+.env
+.env.local
+.env.*.local
+.env.backend
+# On n'autorise que l'exemple
+!.env.example
+
+# misc
+.DS_Store
+*.pem
+.ralph-lsp
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts

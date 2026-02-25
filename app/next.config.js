@@ -8,7 +8,7 @@ const nextConfig = {
     }
     config.externals.push('pino-pretty', 'encoding')
 
-    // Permettre l'import de fichiers .ts depuis contracts/artifacts_backup
+    // Permettre l'import de fichiers .ts depuis contracts
     config.resolve.extensions.push('.ts', '.tsx')
 
     return config

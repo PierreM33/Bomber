@@ -12,8 +12,8 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env.backend') })
 // ============================================================
 // ⚙️ CONFIGURATION MANUELLE DES TESTS
 // ============================================================
-const SHOULD_INITIALIZE = false;
-const SHOULD_BUY_TEST_TICKET = true;
+const SHOULD_INITIALIZE = true;
+const SHOULD_BUY_TEST_TICKET = false;
 // ============================================================
 
 const deployBomber: DeployFunction<Settings> = async (
@@ -94,7 +94,7 @@ const deployBomber: DeployFunction<Settings> = async (
         
         try {
             // Conversion adresse → contractId hex propre (sans group suffix)
-            const bomberHex = binToHex(contractIdFromAddress(bomberInstance.address))
+            const bomberHex = bomberInstance.contractId
             console.log(`   [DEBUG] bomberInstance.address : ${bomberInstance.address}`)
             console.log(`   [DEBUG] bomberHex              : ${bomberHex}`)
             console.log(`   [DEBUG] bomberHex.length       : ${bomberHex.length}`)

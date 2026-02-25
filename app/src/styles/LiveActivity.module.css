@@ -1,0 +1,68 @@
+/* src/styles/LiveActivity.module.css */
+
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* ── Loading / Empty ── */
+.loadingMsg {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  font-style: italic;
+  text-align: center;
+  padding: 1rem 0;
+}
+
+.empty {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  font-style: italic;
+  text-align: center;
+  padding: 1rem 0;
+}
+
+/* ── Activity row ── */
+.activityRow {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.activityRow:last-child { border-bottom: none; }
+
+.activityTop {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 3px;
+}
+
+.address {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--aleph-blue, #3b82f6);
+}
+
+.addressExploded {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--danger-red, #f04444);
+}
+
+.survivedBadge {
+  font-size: 0.72rem;
+  color: var(--prize-green, #4ade80);
+  font-weight: 600;
+}
+
+.explodedBadge {
+  font-size: 0.72rem;
+  color: var(--danger-red, #f04444);
+  font-weight: 700;
+}
+
+.activityMeta {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+}

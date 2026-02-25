@@ -1,30 +1,47 @@
+/// Interface permettant au contrat Ticket d'appeler le contrat principal Bomber.
+/// C'est ici que l'on définit la signature de la fonction que le Ticket a le droit d'appeler.
 Interface IBomber {
     @using(assetsInContract = true, checkExternalCaller = true)
     pub fn claimFromTicket(ticketIndex: U256, owner: Address) -> U256
 }
 
+/// Contrat Ticket : Créé dynamiquement (sub-contract) à chaque achat.
+/// Chaque ticket possède son propre stockage indépendant sur la blockchain.
 Contract Ticket(
-    bomberContractId: ByteVec,
-    owner: Address,
-    ticketIndex: U256,
-    mut claimed: Bool
+    bomberContractId: ByteVec, // ID du contrat Bomber parent (pour savoir à qui demander les récompenses)
+    owner: Address,            // Adresse du joueur qui a acheté ce ticket
+    ticketIndex: U256,         // Numéro du ticket dans la partie (détermine la part du jackpot de consolation)
+    mut claimed: Bool          // État : Indique si les récompenses ont déjà été récupérées (pour éviter le double retrait)
 ) {
+    // Événement déclenché lors du retrait réussi
     event RewardsClaimed(owner: Address, ticketIndex: U256, amount: U256)
 
+    /// Fonction appelée par le joueur pour récupérer sa part après l'explosion de la bombe.
     @using(assetsInContract = false, checkExternalCaller = false, updateFields = true)
     pub fn claimRewards() -> () {
         let caller = callerAddress!()
+        
+        // SÉCURITÉ : Seul le propriétaire du ticket peut déclencher le retrait
         assert!(caller == owner, 0)
+        
+        // SÉCURITÉ : On ne peut pas réclamer deux fois avec le même ticket
         assert!(!claimed, 1)
 
+        // On marque le ticket comme utilisé avant d'appeler le parent (Protection contre les attaques de réentrée)
         claimed = true
 
+        // Initialisation de l'interface vers le contrat Bomber parent
         let bomber = IBomber(bomberContractId)
+        
+        // Appel au contrat parent : le parent calculera la somme et l'enverra directement à l'owner.
+        // On lui passe l'index pour qu'il sache quel pourcentage appliquer.
         let amount = bomber.claimFromTicket(ticketIndex, owner)
 
+        // Notification du retrait réussi
         emit RewardsClaimed(owner, ticketIndex, amount)
     }
 
+    /// Fonction utilitaire pour le Frontend : permet d'afficher les infos du ticket dans l'interface
     pub fn getInfo() -> (Address, U256, Bool) {
         return (owner, ticketIndex, claimed)
     }

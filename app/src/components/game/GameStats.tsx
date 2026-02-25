@@ -1,106 +1,90 @@
 import React from 'react'
 import { useBomberGame } from '@/hooks/useBomberGame'
+import styles from '../../styles/GameStats.module.css'
 
 export const GameStats = () => {
   const { gameData } = useBomberGame()
 
-  // Convertir les bigint en nombres lisibles (1 ALPH = 10^18 wei)
-  const potInAlph = gameData.potAmount
-    ? (Number(gameData.potAmount) / 1e18).toFixed(2)
-    : '0.00'
-
-  const ticketCount = gameData.ticketCount.toString()
-  const maxTickets = gameData.maxTicketsFor50Percent.toString()
-
-  // ✅ NOUVEAU - Prix dynamique du prochain ticket
-  const nextTicketPrice = (Number(gameData.currentPrice) / 1e18).toFixed(2)
-
-  if (gameData.isLoading) {
+  if (!gameData || gameData.isLoading) {
     return (
-      <div style={{ padding: '20px', textAlign: 'center' }}>
-        <p>Chargement des données...</p>
+      <div className={styles.loading}>
+        <span className={styles.loadingDot} />
+        <span className={styles.loadingDot} />
+        <span className={styles.loadingDot} />
       </div>
     )
   }
 
   if (gameData.error) {
-    return (
-      <div style={{ padding: '20px', color: '#ff4444' }}>
-        <p>❌ Erreur: {gameData.error}</p>
-      </div>
-    )
+    return <div className={styles.error}>❌ {gameData.error}</div>
   }
 
+  // ✅ Fix: utilise totalPot (pas potAmount qui n'existe pas)
+  const potInAlph = gameData.totalPot
+    ? (Number(gameData.totalPot) / 1e18).toFixed(2)
+    : '0.00'
+
+  const ticketCount = gameData.ticketCount?.toString() ?? '0'
+  const currentRisk = Number(gameData.currentRisk ?? 0)
+
+  const riskColor = currentRisk >= 40
+    ? 'var(--danger-red)'
+    : currentRisk >= 20
+      ? 'var(--warning-amber)'
+      : 'var(--prize-green)'
+
   return (
-    <div style={{ padding: '10px' }}>
-      {/* ✅ NOUVEAU - Badge d'état du jeu */}
-      <div style={{ marginBottom: '20px', textAlign: 'center' }}>
-        <span style={{
-          display: 'inline-block',
-          padding: '6px 12px',
-          borderRadius: '20px',
-          fontSize: '12px',
-          fontWeight: 'bold',
-          backgroundColor: gameData.isActive ? '#4CAF50' : '#ff4444',
-          color: 'white'
-        }}>
-          {gameData.isActive ? '🟢 Jeu Actif' : '🔴 Jeu Terminé'}
-        </span>
+    <div className={styles.container}>
+
+      <div className={`${styles.statusBadge} ${gameData.isActive ? styles.active : styles.terminated}`}>
+        <span className={styles.statusDot} />
+        {gameData.isActive ? 'Live' : 'Terminated'}
       </div>
 
-      <div style={{ marginBottom: '20px' }}>
-        <strong style={{ display: 'block', marginBottom: '5px' }}>💰 Pot Actuel</strong>
-        <span style={{ fontSize: '24px', color: '#027ec0', fontWeight: 'bold' }}>
-          {potInAlph} ALPH
-        </span>
-      </div>
+      {!gameData.isActive && (
+        <div className={styles.explosionBox}>
+          <span className={styles.explosionIcon}>💥</span>
+          <div>
+            <div className={styles.explosionTitle}>BOMB EXPLODED!</div>
+            <div className={styles.explosionSub}>The game will restart soon.</div>
+          </div>
+        </div>
+      )}
 
-      <div style={{ marginBottom: '20px' }}>
-        <strong style={{ display: 'block', marginBottom: '5px' }}>🎫 Tickets Vendus</strong>
-        <span style={{ fontSize: '20px' }}>
-          {ticketCount} / {maxTickets}
-        </span>
-        <div style={{
-          width: '100%',
-          height: '8px',
-          backgroundColor: '#eee',
-          borderRadius: '4px',
-          marginTop: '8px',
-          overflow: 'hidden'
-        }}>
-          <div style={{
-            width: `${Math.min((Number(ticketCount) / Number(maxTickets)) * 100, 100)}%`,
-            height: '100%',
-            backgroundColor: '#027ec0',
-            transition: 'width 0.3s ease'
-          }} />
+      <div className={styles.statRow}>
+        <div className={styles.statLabel}>💰 Current Pot</div>
+        <div className={styles.statValue} style={{ color: 'var(--prize-green)' }}>
+          {potInAlph} <span className={styles.statUnit}>ALPH</span>
         </div>
       </div>
 
-      <div style={{ marginBottom: '20px' }}>
-        <strong style={{ display: 'block', marginBottom: '5px' }}>⚠️ Risque Actuel</strong>
-        <span style={{
-          fontSize: '20px',
-          color: Number(gameData.currentRisk) > 30 ? '#ff4444' : '#027ec0'
-        }}>
-          {gameData.currentRisk.toString()}%
-        </span>
+      <div className={styles.divider} />
+
+      <div className={styles.statRow}>
+        <div className={styles.statLabel}>🎫 Round Number</div>
+        <div className={styles.statValue}>#{ticketCount}</div>
       </div>
 
-      {/* ✅ NOUVEAU - Prix du prochain ticket (dynamique) */}
-      <div>
-        <strong style={{ display: 'block', marginBottom: '5px' }}>
-          💵 Prochain Ticket
-        </strong>
-        <span style={{ fontSize: '18px', color: '#027ec0' }}>
-          {nextTicketPrice} ALPH
-        </span>
-        {Number(ticketCount) > 0 && (
-          <div style={{ fontSize: '11px', color: '#888', marginTop: '4px' }}>
-            +4% par ticket
-          </div>
-        )}
+      <div className={styles.divider} />
+
+      <div className={styles.statRow}>
+        <div className={styles.statLabel}>⚠️ Current Risk</div>
+        <div className={styles.statValue} style={{ color: riskColor }}>
+          {currentRisk}<span className={styles.statUnit}>%</span>
+        </div>
       </div>
+
+      <div className={styles.riskBar}>
+        <div
+          className={styles.riskFill}
+          style={{
+            width: `${Math.min(currentRisk * 2, 100)}%`,
+            background: riskColor,
+            boxShadow: `0 0 8px ${riskColor}80`
+          }}
+        />
+      </div>
+
     </div>
   )
 }

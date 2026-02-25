@@ -1,10 +1,8 @@
 import { web3, NodeProvider } from '@alephium/web3'
-// import {loadDeployments} from "my-contracts/dist/artifacts_backup/ts/deployments_backup";
-
 const TESTNET_NODE_URL = 'https://node.testnet.alephium.org'
 
 // Configuration bomber depuis les déploiements
-import { loadDeployments } from '../../../contracts/artifacts_backup/ts/deployments'
+import { loadDeployments } from '../../../contracts/artifacts/ts/deployments'
 
 const deployments = loadDeployments('testnet')
 

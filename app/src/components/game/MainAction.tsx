@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react' // Ajout de useEffect
 import { useWallet } from '@alephium/web3-react'
 import styles from '../../styles/GameLayout.module.css'
 import { useBomberGame } from '@/hooks/useBomberGame'
@@ -9,66 +9,77 @@ export const MainAction = () => {
   const { gameData, refreshGameData } = useBomberGame()
   const [isPlaying, setIsPlaying] = useState(false)
 
+  // Log automatique à chaque mise à jour des données du contrat
+  useEffect(() => {
+    if (gameData && !gameData.isLoading) {
+      console.group('📄 Smart Contract State Update');
+      console.log('Status:', gameData.isActive ? '🟢 Active' : '🔴 Terminated');
+      console.log('Pot Amount:', (Number(gameData.potAmount) / 1e18).toFixed(4), 'ALPH');
+      console.log('Price:', (Number(gameData.currentPrice) / 1e18).toFixed(4), 'ALPH');
+      console.log('Current Risk:', gameData.currentRisk, '%');
+      console.log('Round:', gameData.ticketCount);
+      console.log('Raw Data:', gameData);
+      console.groupEnd();
+    }
+  }, [gameData]);
+
   const handlePlay = async () => {
-    console.log("Bouton cliqué. Status:", connectionStatus)
-
     if (connectionStatus !== 'connected' || !signer) {
-      alert("Veuillez connecter votre wallet Alephium")
+      alert("Please connect your Alephium wallet")
       return
     }
-
-    if (!gameData.isActive) {
-      alert("La bombe a explosé ! Attendez le round suivant.")
+    if (!gameData?.isActive) {
+      alert("The bomb exploded! Wait for the next round.")
       return
     }
-
     try {
       setIsPlaying(true)
-      console.log("Lancement de l'achat pour le compte:", account?.address)
+
+      console.group('🚀 Transaction Outbound');
+      console.log("Wallet:", account?.address);
+      console.log("Price to Pay:", (Number(gameData.currentPrice) / 1e18).toFixed(4), "ALPH");
 
       const result = await buyTicket(signer)
 
-      console.log("Résultat reçu dans le composant:", result)
+      console.log("Transaction Result:", result);
+      console.groupEnd();
 
-      // Optionnel: on peut attendre que la transaction soit "confirmée" 
-      // mais un petit délai suffit souvent pour la mise à jour UI
+      // Petit délai pour laisser la blockchain indexer avant de refresh
       setTimeout(() => {
-        console.log("Rafraîchissement des données du jeu...")
-        refreshGameData()
-      }, 4000)
+        console.log("🔄 Refreshing game data...");
+        refreshGameData();
+      }, 4000);
 
     } catch (e: any) {
-      console.error("Erreur capturée dans handlePlay:", e)
-      alert(`Erreur: ${e.message || "Échec de la transaction"}`)
+      console.error("❌ Transaction Failed:", e);
+      alert(`Error: ${e.message || "Transaction failed"}`)
     } finally {
       setIsPlaying(false)
     }
   }
 
-  // Conversion sécurisée pour l'affichage
-  const riskLevel = gameData.currentRisk ? Number(gameData.currentRisk) : 0
-  const priceAlph = gameData.currentPrice
+  const priceAlph = gameData?.currentPrice
     ? (Number(gameData.currentPrice) / 1e18).toFixed(2)
     : "0.00"
 
+  const isDisabled = isPlaying || !gameData?.isActive || connectionStatus !== 'connected'
+
   return (
     <div className={styles.actionCard}>
-      <div className={styles.riskCircle}>
-        <div className={styles.riskValue}>{riskLevel}%</div>
-        <div className={styles.riskLabel}>RISQUE</div>
-      </div>
-
       <button
         className={styles.playButton}
         onClick={handlePlay}
-        disabled={isPlaying || !gameData.isActive || connectionStatus !== 'connected'}
+        disabled={isDisabled}
       >
-        {isPlaying ? 'Signature en cours...' : `Prendre la Bombe (${priceAlph} ALPH)`}
+        {isPlaying
+          ? '⏳ Signing...'
+          : `💣 Take the bomb (${priceAlph} ALPH)`
+        }
       </button>
 
-      {!gameData.isActive && (
-        <p style={{ color: '#ff4444', fontWeight: 'bold', marginTop: '10px', textAlign: 'center' }}>
-          💥 BOMBE EXPLOSÉE ! <br/> Le jeu redémarrera bientôt.
+      {connectionStatus !== 'connected' && (
+        <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', textAlign: 'center' }}>
+          Connect your wallet to play
         </p>
       )}
     </div>

@@ -1,93 +1,63 @@
 import React from 'react'
 import { useBomberGame } from '@/hooks/useBomberGame'
+import styles from '../../styles/LiveActivity.module.css'
+
+function shortAddress(addr: string): string {
+  return addr.slice(0, 6) + '...' + addr.slice(-4)
+}
+
+function timeAgo(timestamp: number): string {
+  if (timestamp === 0) return 'Earlier'
+  const diff = Math.floor((Date.now() - timestamp) / 1000)
+  if (diff < 60) return `${diff}s ago`
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
+  return `${Math.floor(diff / 3600)}h ago`
+}
 
 export const LiveActivity = () => {
-  const { recentActivities } = useBomberGame()
+  const { recentActivities, isLoadingHistory } = useBomberGame()
 
-  // Fonction pour formater l'adresse
-  const formatAddress = (address: string) => {
-    if (!address || address.length < 10) return address
-    return `${address.slice(0, 6)}...${address.slice(-4)}`
-  }
-
-  // Fonction pour formater le temps écoulé
-  const formatTimeAgo = (timestamp: number) => {
-    const seconds = Math.floor((Date.now() - timestamp) / 1000)
-    if (seconds < 60) return `Il y a ${seconds}s`
-    const minutes = Math.floor(seconds / 60)
-    if (minutes < 60) return `Il y a ${minutes}min`
-    const hours = Math.floor(minutes / 60)
-    return `Il y a ${hours}h`
-  }
-
-  if (recentActivities.length === 0) {
+  // ── Loading ──────────────────────────────────────────────────────────────────
+  if (isLoadingHistory) {
     return (
-      <div style={{ padding: '20px', textAlign: 'center', color: '#666' }}>
-        <p>Aucune activité récente...</p>
-        <p style={{ fontSize: '12px', marginTop: '10px' }}>
-          Soyez le premier à jouer ! 🎮
-        </p>
+      <div className={styles.loadingMsg}>
+        ⏳ Loading activity...
       </div>
     )
   }
 
+  if (recentActivities.length === 0) {
+    return <div className={styles.empty}>No recent activity...</div>
+  }
+
   return (
-    <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+    <div className={styles.container}>
       {recentActivities.map((activity, index) => (
-        <li
-          key={`${activity.player}-${activity.timestamp}-${index}`}
-          style={{
-            padding: '12px 8px',
-            borderBottom: '1px solid #eee',
-            fontSize: '14px'
-          }}
-        >
-          {/* ✅ MISE À JOUR - Achat de ticket avec prix */}
-          {activity.action === 'bought_ticket' && (
-            <div>
-              <span style={{ color: '#027ec0', fontWeight: 'bold' }}>
-                {formatAddress(activity.player)}
-              </span>
-              {' '}
-              <span style={{ color: '#4CAF50' }}>✅ a survécu</span>
-              <div style={{ fontSize: '12px', color: '#888', marginTop: '4px' }}>
-                Ticket #{activity.ticketIndex} • {activity.price?.toFixed(2)} ALPH
-                {' • '}Risque: {activity.risk}%
-                {' • '}{formatTimeAgo(activity.timestamp)}
+        <div key={index} className={styles.activityRow}>
+          {activity.action === 'exploded' ? (
+            <>
+              <div className={styles.activityTop}>
+                <span className={styles.addressExploded}>{shortAddress(activity.player)}</span>
+                <span className={styles.explodedBadge}>💥 BOOM!</span>
               </div>
-            </div>
-          )}
-
-          {/* Explosion */}
-          {activity.action === 'exploded' && (
-            <div>
-              <span style={{ color: '#027ec0', fontWeight: 'bold' }}>
-                {formatAddress(activity.player)}
-              </span>
-              {' '}
-              <span style={{ color: '#ff4444', fontWeight: 'bold' }}>💥 BOUM!</span>
-              <div style={{ fontSize: '12px', color: '#888', marginTop: '4px' }}>
-                {formatTimeAgo(activity.timestamp)}
+              <div className={styles.activityMeta}>{timeAgo(activity.timestamp)}</div>
+            </>
+          ) : (
+            <>
+              <div className={styles.activityTop}>
+                <span className={styles.address}>{shortAddress(activity.player)}</span>
+                <span className={styles.survivedBadge}>✅ survived</span>
               </div>
-            </div>
-          )}
-
-          {/* ✅ NOUVEAU - Claim de rewards */}
-          {activity.action === 'claimed_rewards' && (
-            <div>
-              <span style={{ color: '#027ec0', fontWeight: 'bold' }}>
-                {formatAddress(activity.player)}
-              </span>
-              {' '}
-              <span style={{ color: '#FFD700', fontWeight: 'bold' }}>💎 a récupéré</span>
-              <div style={{ fontSize: '12px', color: '#888', marginTop: '4px' }}>
-                Ticket #{activity.ticketIndex} • {activity.amount?.toFixed(4)} ALPH
-                {' • '}{formatTimeAgo(activity.timestamp)}
+              <div className={styles.activityMeta}>
+                Ticket #{activity.ticketIndex}
+                {activity.price && ` · ${activity.price.toFixed(2)} ALPH`}
+                {activity.risk !== undefined && ` · Risk: ${activity.risk}%`}
+                {' · '}{timeAgo(activity.timestamp)}
               </div>
-            </div>
+            </>
           )}
-        </li>
+        </div>
       ))}
-    </ul>
+    </div>
   )
 }

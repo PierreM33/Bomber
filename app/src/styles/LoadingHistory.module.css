@@ -1,0 +1,42 @@
+/* src/styles/LoadingHistory.css */
+.banner {
+  position: fixed;
+  bottom: 24px;
+  left: 24px;
+  z-index: 9998;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: rgba(20, 20, 30, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  font-size: 0.82rem;
+  color: #bbb;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  transition: opacity 0.5s ease, transform 0.5s ease;
+  pointer-events: none;
+}
+
+.banner.fadeOut {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+.spinner {
+  font-size: 1rem;
+  animation: rotate 1.2s linear infinite;
+  display: inline-block;
+}
+
+@keyframes rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.text {
+  font-style: italic;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}

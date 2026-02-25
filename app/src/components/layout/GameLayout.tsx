@@ -4,29 +4,33 @@ import { LiveActivity } from '../game/LiveActivity'
 import { GameStats } from '../game/GameStats'
 import { MainAction } from '../game/MainAction'
 import { ClaimRewards } from '../game/ClaimRewards'
+import { LoadingHistory } from '../game/LoadingHistory'
 
 export const GameLayout = () => {
   return (
-    <div className={styles.layoutContainer}>
-      {/* COLONNE GAUCHE */}
-      <aside className={styles.sidePanel}>
-        <h3 className={styles.panelTitle}>Activités Récentes</h3>
-        <LiveActivity />
-      </aside>
+    <>
+      {/* Banner HORS du layout — ne perturbe pas les colonnes */}
+      <LoadingHistory />
 
-      {/* COLONNE CENTRALE */}
-      <main className={styles.centerPanel}>
-        <MainAction />
+      <div className={styles.layoutContainer}>
+        {/* COLONNE GAUCHE */}
+        <aside className={styles.sidePanel}>
+          <h3 className={styles.panelTitle}>Recent Activities</h3>
+          <LiveActivity />
+        </aside>
 
-        {/* ✅ NOUVEAU - Composant de claim des rewards */}
-        <ClaimRewards />
-      </main>
+        {/* COLONNE CENTRALE */}
+        <main className={styles.centerPanel}>
+          <MainAction />
+          <ClaimRewards />
+        </main>
 
-      {/* COLONNE DROITE */}
-      <aside className={styles.sidePanel}>
-        <h3 className={styles.panelTitle}>État du Contrat</h3>
-        <GameStats />
-      </aside>
-    </div>
+        {/* COLONNE DROITE */}
+        <aside className={styles.sidePanel}>
+          <h3 className={styles.panelTitle}>Game State</h3>
+          <GameStats />
+        </aside>
+      </div>
+    </>
   )
 }

@@ -1,5 +1,5 @@
 import React from 'react'
-import '@/styles/globals.css'
+import '@/styles/Globals.css'
 import type { AppProps } from 'next/app'
 import { AlephiumWalletProvider } from '@alephium/web3-react'
 

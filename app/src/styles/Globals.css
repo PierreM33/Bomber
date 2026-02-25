@@ -1,0 +1,52 @@
+/* src/styles/Globals.css */
+@import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=DM+Sans:wght@400;500;600&display=swap');
+
+:root {
+  /* ── Backgrounds ── */
+  --bg-page:        #1a1e2a;
+  --bg-card:        #222736;
+  --bg-card-hover:  #272c3d;
+  --bg-inset:       #1e2230;
+
+  /* ── Borders ── */
+  --border-color:   #2e3548;
+  --border-bright:  #3a4460;
+
+  /* ── Text ── */
+  --text-primary:   #edf0f5;
+  --text-secondary: #7a8699;
+  --text-dim:       #4a5568;
+
+  /* ── Brand accents ── */
+  --aleph-blue:     #3b82f6;
+  --aleph-blue-dim: rgba(59,130,246,0.12);
+  --prize-green:    #00c87a;
+  --prize-green-dim:rgba(0,200,122,0.12);
+  --danger-red:     #f04444;
+  --danger-red-dim: rgba(240,68,68,0.10);
+  --warning-amber:  #f59e0b;
+
+  /* ── Shadows ── */
+  --shadow-card:    0 4px 24px rgba(0,0,0,0.25);
+  --shadow-glow-blue: 0 0 20px rgba(59,130,246,0.2);
+  --shadow-glow-green: 0 0 20px rgba(0,200,122,0.2);
+
+  /* ── Typography ── */
+  --font-display:   'Rajdhani', sans-serif;
+  --font-body:      'DM Sans', sans-serif;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  font-family: var(--font-body);
+  background-color: var(--bg-page);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+}
+
+a { text-decoration: none; color: inherit; }
+
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: var(--bg-inset); }
+::-webkit-scrollbar-thumb { background: var(--border-bright); border-radius: 2px; }

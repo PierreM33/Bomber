@@ -1,3 +1,11 @@
-TxScript BuyTicket(bomber: Bomber, amount: U256) {
-    let _ = bomber.buyTicket{callerAddress!() -> ALPH: amount}()
+/// Script de transaction (TxScript) pour acheter un ticket.
+TxScript BuyTicket(
+    bomber: ByteVec, // L'instance (ou adresse) du contrat Bomber cible
+    amount: U256    // Le montant exact d'ALPH envoyé (incluant le prix du ticket + le dust pour le sous-contrat)
+) {
+    // Appel de la fonction 'buyTicket' du contrat Bomber.
+    // La syntaxe {callerAddress!() -> ALPH: amount} est fondamentale : 
+    // elle autorise explicitement le contrat à prélever 'amount' ALPH depuis le portefeuille de l'utilisateur.
+    // Le '_' indique que l'on ignore la valeur de retour (qui est l'ID du ticket) au niveau du script.
+    let _ = Bomber(bomber).buyTicket{callerAddress!() -> ALPH: amount}()
 }

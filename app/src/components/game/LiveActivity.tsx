@@ -1,5 +1,5 @@
 import React from 'react'
-import { useBomberGame } from '@/hooks/useBomberGame'
+import { useBomberGameContext } from '@/contexts/BomberGameContext'
 import styles from '../../styles/LiveActivity.module.css'
 
 function shortAddress(addr: string): string {
@@ -15,16 +15,7 @@ function timeAgo(timestamp: number): string {
 }
 
 export const LiveActivity = () => {
-  const { recentActivities, isLoadingHistory } = useBomberGame()
-
-  // ── Loading ──────────────────────────────────────────────────────────────────
-  if (isLoadingHistory) {
-    return (
-      <div className={styles.loadingMsg}>
-        ⏳ Loading activity...
-      </div>
-    )
-  }
+  const { recentActivities } = useBomberGameContext()
 
   if (recentActivities.length === 0) {
     return <div className={styles.empty}>No recent activity...</div>

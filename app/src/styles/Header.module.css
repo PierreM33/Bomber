@@ -80,3 +80,38 @@
   background: var(--border-bright) !important;
   border-color: var(--aleph-blue) !important;
 }
+
+/* Section wallet : flex row pour aligner restart + connect button */
+.walletSection {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Bouton restart — rouge discret, visible mais pas agressif */
+.restartBtn {
+  background: transparent;
+  border: 1px solid var(--danger-red, #f04444);
+  color: var(--danger-red, #f04444);
+  border-radius: 8px;
+  padding: 7px 14px;
+  font-family: var(--font-display);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.restartBtn:hover:not(:disabled) {
+  background: rgba(240, 68, 68, 0.12);
+  box-shadow: 0 0 12px rgba(240, 68, 68, 0.2);
+}
+
+.restartBtn:disabled,
+.restartBtnLoading {
+  opacity: 0.6;
+  cursor: not-allowed;
+}

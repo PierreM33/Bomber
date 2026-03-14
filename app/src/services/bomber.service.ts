@@ -27,26 +27,44 @@ export function getBomberContract(): BomberInstance {
 export async function getGameInfo() {
   try {
     const bomber = getBomberContract()
-
-    const state = await bomber.fetchState()
-    const redistributionPool = state.fields.redistributionPool as bigint
-
     const result = await bomber.view.getGameInfo()
 
+    // ✅ FIX : mapping correct des retours de getGameInfo()
+    // Ralph : return (currentGameId, ticketCount, totalPot, getCurrentPrice(), isActive, redistributionPool)
+    // Index :           [0]            [1]          [2]         [3]             [4]        [5]
+    const currentGameId      = result.returns[0] as bigint
+    const ticketCount        = result.returns[1] as bigint
+    const totalPot           = result.returns[2] as bigint  // ✅ était confondu avec currentRisk
+    const currentPrice       = result.returns[3] as bigint
+    const isActive           = result.returns[4] as boolean
+    const redistributionPool = result.returns[5] as bigint  // ✅ lu directement ici, plus besoin de fetchState()
+
+    // ✅ currentRisk calculé côté front depuis ticketCount et maxTicketsFor50Percent
+    // On lit maxTicketsFor50Percent depuis le state pour le calcul
+    const state = await bomber.fetchState()
+    const maxTickets = state.fields.maxTicketsFor50Percent as bigint
+    const rawRisk = maxTickets > 0n
+      ? (ticketCount * 50n) / maxTickets
+      : 0n
+    const currentRisk = rawRisk > 50n ? 50n : rawRisk
+
     console.group('📊 [CONTRACT_VIEW] Bomber Stats')
-    console.log('🔹 Ticket Count:', result.returns[1].toString())
-    console.log('🔹 Is Active:', result.returns[4])
-    console.log('🔹 Current Price:', result.returns[3].toString())
-    console.log('🔹 Current Risk:', result.returns[2].toString())
+    console.log('🔹 Game ID:', currentGameId.toString())
+    console.log('🔹 Ticket Count:', ticketCount.toString())
+    console.log('🔹 Total Pot:', totalPot.toString(), 'attoALPH')
+    console.log('🔹 Current Price:', currentPrice.toString())
+    console.log('🔹 Is Active:', isActive)
+    console.log('🔹 Current Risk:', currentRisk.toString(), '%')
     console.log('🔹 Redistribution Pool:', redistributionPool.toString())
     console.groupEnd()
 
     return {
-      maxTicketsFor50Percent: result.returns[0],
-      ticketCount: result.returns[1],
-      currentRisk: result.returns[2],
-      currentPrice: result.returns[3],
-      isActive: result.returns[4],
+      maxTicketsFor50Percent: maxTickets,
+      ticketCount,
+      currentRisk,   // ✅ maintenant un vrai % entre 0 et 50
+      currentPrice,
+      totalPot,      // ✅ maintenant correctement alimenté
+      isActive,
       redistributionPool
     }
   } catch (error) {
@@ -55,61 +73,162 @@ export async function getGameInfo() {
   }
 }
 
-export async function buyTicket(signer: SignerProvider) {
+// ── Nb total de transactions on-chain du contrat ──────────────────────────────
+const EXPLORER_BACKEND_URL = 'https://backend.testnet.alephium.org'
+
+export async function getTotalTransactions(): Promise<number> {
   try {
-    const info = await getGameInfo()
-    const price = BigInt(info.currentPrice)
-    const subContractDeposit = ONE_ALPH / 10n
-    const totalAmount = price + subContractDeposit
-    const attoAlphToSend = totalAmount + BigInt(DUST_AMOUNT)
-
-    const result = await BuyTicketScript.execute(signer, {
-      initialFields: { bomber: BOMBER_CONTRACT_ID, amount: totalAmount },
-      attoAlphAmount: attoAlphToSend,
-      gasAmount: 200000
-    })
-
-    console.log('✅ [TRANSACTION_SUCCESS] TxID:', result.txId)
-    return result
-  } catch (error: any) {
-    console.error('❌ [BUY_TICKET_FAILED]', error)
-    throw error
+    const res = await fetch(
+      `${EXPLORER_BACKEND_URL}/addresses/${BOMBER_CONTRACT_ADDRESS}`
+    )
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const data = await res.json()
+    return data.txNumber ?? 0
+  } catch (e: any) {
+    console.warn('getTotalTransactions error:', e.message)
+    return 0
   }
 }
 
-// ── Vérifie si un ticket a déjà été claimé via son contractId (fourni par l'event) ──
-// ✅ On utilise le contractId reçu directement depuis l'event TicketBought,
-//    pas besoin de le recalculer (évite les bugs de groupIndex)
+export async function getPlatformAddress(): Promise<string> {
+  const bomber = getBomberContract()
+  const state = await bomber.fetchState()
+  return state.fields.platformAddress as string
+}
+
+
+export async function buyTicket(signer: SignerProvider): Promise<{ txId: string; pricePaid: bigint; oracleValue: string | null }> {
+  const MAX_RETRIES = 3
+  const RETRY_DELAY = 5000 // 5s entre chaque tentative
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      if (attempt > 1) {
+        console.log(`🔄 [BUY_RETRY] Tentative ${attempt}/${MAX_RETRIES} dans ${RETRY_DELAY/1000}s...`)
+        await new Promise(r => setTimeout(r, RETRY_DELAY))
+      }
+
+      const info = await getGameInfo()
+      const price = BigInt(info.currentPrice)
+      const subContractDeposit = ONE_ALPH / 10n
+      const slippage = (price * 30n) / 100n
+      const totalAmount = price + subContractDeposit + slippage
+      const attoAlphToSend = totalAmount + BigInt(DUST_AMOUNT)
+
+      const result = await BuyTicketScript.execute(signer, {
+        initialFields: { bomber: BOMBER_CONTRACT_ID, amount: totalAmount },
+        attoAlphAmount: attoAlphToSend,
+        gasAmount: 950000
+      })
+
+      console.log(`✅ [TRANSACTION_SUCCESS] TxID: ${result.txId} (tentative ${attempt})`)
+
+      // Récupération Oracle
+      let oracleValue: string | null = null
+      try {
+        const node = web3.getCurrentNodeProvider()
+        for (let o = 0; o < 20; o++) {
+          await new Promise(r => setTimeout(r, 3000))
+          try {
+            const events = await node.events.getEventsTxIdTxid(result.txId)
+            const boughtEvent = events.events.find(e => e.eventIndex === 0)
+            if (boughtEvent) {
+              oracleValue = boughtEvent.fields[5].value.toString()
+              const risk = boughtEvent.fields[3].value.toString()
+              console.log(`🎲 [ORACLE_LOG] Tentative ${o + 1} | Valeur tirée : ${oracleValue} | Risque : ${risk}% | ${Number(oracleValue) < Number(risk) ? '💥 EXPLOSION' : '✅ SURVIE'}`)
+              break
+            }
+            console.log(`⏳ [ORACLE_WAIT] Tentative ${o + 1}/20 - event pas encore indexé...`)
+          } catch (e) {
+            console.log(`⏳ [ORACLE_WAIT] Tentative ${o + 1}/20 - erreur fetch:`, e)
+          }
+        }
+      } catch (e) {
+        console.warn('Impossible de fetch l\'oracle value:', e)
+      }
+
+      return { txId: result.txId, pricePaid: price, oracleValue }
+
+    } catch (error: any) {
+      const msg = error?.message ?? ''
+      const isRetryable = msg.includes('does not exist') || msg.includes('Execution error')
+
+      console.error(`❌ [BUY_TICKET_FAILED] Tentative ${attempt}/${MAX_RETRIES}:`, msg.slice(0, 150))
+
+      if (isRetryable && attempt < MAX_RETRIES) {
+        console.log(`⏳ Erreur récupérable, on réessaie...`)
+        continue
+      }
+
+      throw error
+    }
+  }
+
+  throw new Error('Échec après ' + MAX_RETRIES + ' tentatives')
+}
+
 export async function hasTicketClaimed(ticketContractId: string): Promise<boolean> {
   try {
     const ticketAddress = addressFromContractId(ticketContractId)
     const ticketContract = Ticket.at(ticketAddress)
-    const info = await ticketContract.view.getInfo()
-    return info.returns[2] as boolean
+    const state = await ticketContract.fetchState()
+    // Accès direct au champ 'claimed' qui est le dernier champ mutable
+    return state.fields.claimed as boolean
   } catch (error: any) {
     const msg = error?.message ?? ''
-    if (msg.includes('does not exist') || msg.includes('destroyed') || msg.includes('not found')) {
-      console.warn(`Ticket contract ${ticketContractId.slice(0, 8)}... not found → already claimed`)
-      return true
+    if (
+      msg.includes('does not exist') ||
+      msg.includes('destroyed') ||
+      msg.includes('not found') ||
+      msg.includes('ByteVec') ||   // ← ajout
+      msg.includes('Address')      // ← ajout
+    ) {
+      return false  // pas claimed, juste inaccessible
     }
-    console.warn(`hasTicketClaimed error (assuming not claimed):`, msg)
+    console.warn(`hasTicketClaimed error:`, msg)
     return false
   }
 }
 
-// ── Claim les rewards d'un ticket via son contractId (fourni par l'event) ──
 export async function claimRewards(signer: SignerProvider, ticketContractId: string) {
   try {
     const ticketAddress = addressFromContractId(ticketContractId)
     console.log(`💎 Claim → contractId: ${ticketContractId} → address: ${ticketAddress}`)
-
     const ticketContract = Ticket.at(ticketAddress)
     const result = await ticketContract.transact.claimRewards({ signer })
-
     console.log('✅ Claim envoyé ! TxId:', result.txId)
     return result
   } catch (error: any) {
     console.error('Erreur claimRewards:', error)
+    throw error
+  }
+}
+
+export async function restartGame(signer: SignerProvider) {
+  try {
+    const bomber = getBomberContract()
+    console.log('🔄 Restarting game...')
+    const result = await bomber.transact.restartGame({ signer })
+    console.log('✅ Game restarted ! TxId:', result.txId)
+    return result
+  } catch (error: any) {
+    console.error('❌ restartGame failed:', error)
+    throw error
+  }
+}
+
+export async function withdrawFunds(signer: SignerProvider, amount: bigint) {
+  try {
+    const bomber = getBomberContract()
+    console.log('💰 Withdrawing', amount.toString(), 'attoALPH...')
+    const result = await bomber.transact.withdrawFunds({
+      signer,
+      args: { amount }
+    })
+    console.log('✅ Withdraw envoyé ! TxId:', result.txId)
+    return result
+  } catch (error: any) {
+    console.error('❌ withdrawFunds failed:', error)
     throw error
   }
 }

@@ -1,3 +1,4 @@
+//app/src/services/utils.tsx
 import { web3, NodeProvider } from '@alephium/web3'
 const TESTNET_NODE_URL = 'https://node.testnet.alephium.org'
 

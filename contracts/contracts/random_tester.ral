@@ -1,0 +1,45 @@
+Contract RandomTester(
+    oracle: IDIARandomOracle,
+    mut callCount: U256
+) {
+    event RandResult(
+        callCount: U256,
+        round: U256,
+        rawValue: U256,
+        randSimple: U256,
+        randBlake: U256,
+        risk: U256,
+        wouldExplodeSimple: Bool,
+        wouldExplodeBlake: Bool
+    )
+
+    @using(updateFields = true, checkExternalCaller = false)
+    pub fn test(risk: U256) -> () {
+        let lastRound = oracle.getLastRound()
+        let randomData = oracle.getRandomValue(lastRound)
+        let rawValue = u256From32Byte!(randomData.randomness)
+
+        // Ancienne formule (qui marchait)
+        let randSimple = (rawValue + callCount) % 100
+
+        // Nouvelle formule blake2b
+        let seed = blake2b!(
+            randomData.randomness
+            ++ toByteVec!(callCount)
+        )
+        let randBlake = u256From32Byte!(seed) % 100
+
+        callCount = callCount + 1
+
+        emit RandResult(
+            callCount,
+            lastRound,
+            rawValue % 100,
+            randSimple,
+            randBlake,
+            risk,
+            randSimple < risk,
+            randBlake < risk
+        )
+    }
+}

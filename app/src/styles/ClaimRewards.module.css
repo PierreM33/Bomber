@@ -30,13 +30,31 @@
   flex: 1;
 }
 
-/* ── Loading message — simple, visible, dans le contour ── */
+/* ── Loading ── */
 .loadingMsg {
-  text-align: center;
-  padding: 1.5rem 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 1.25rem 0;
   font-size: 0.85rem;
   color: var(--text-secondary);
   font-style: italic;
+}
+
+.loadingSpinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border-bright);
+  border-top-color: var(--aleph-blue);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 /* ── Badge ticket count ── */
@@ -76,7 +94,6 @@
 }
 
 .ticketRow:hover { border-color: var(--border-bright); }
-
 .ticketRowClaimed { opacity: 0.5; }
 
 .ticketInfo {
@@ -158,12 +175,6 @@
   font-weight: 600;
   color: #4caf50;
   margin-bottom: 2px;
-}
-
-.txHash {
-  font-size: 0.65rem;
-  color: var(--text-dim);
-  font-family: monospace;
 }
 
 /* ── Warning ── */

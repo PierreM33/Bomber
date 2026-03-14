@@ -158,3 +158,13 @@
   border-radius: 2px;
   transition: width 0.5s ease, background 0.3s ease;
 }
+
+.statHint {
+  display: block;
+  font-size: 0.65rem;
+  font-weight: 400;
+  color: var(--text-dim);
+  letter-spacing: 0;
+  text-transform: none;
+  margin-top: 1px;
+}

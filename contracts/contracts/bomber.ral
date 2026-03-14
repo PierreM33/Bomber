@@ -1,52 +1,52 @@
-/// Structure représentant la valeur aléatoire fournie par l'Oracle DIA
+/// Structure de l'Oracle DIA
 struct DIARandomValue {
-    randomness: ByteVec, // La valeur aléatoire brute (32 bytes)
-    signature: ByteVec,  // Preuve cryptographique de la valeur
-    round: U256          // Numéro du round correspondant
+    randomness: ByteVec,
+    signature: ByteVec,
+    round: U256
 }
 
-/// Interface pour interagir avec le contrat de l'Oracle DIA sur Alephium
 Interface IDIARandomOracle {
     pub fn getLastRound() -> U256
     pub fn getRandomValue(round: U256) -> DIARandomValue
 }
 
-/// Contrat principal du jeu "Bomber"
-/// Le but : acheter des tickets dont le prix augmente. À chaque achat, la bombe peut exploser.
-/// Si elle explose, les derniers joueurs gagnent le jackpot.
 Contract Bomber(
-    platformAddress: Address,        // Adresse du développeur / plateforme (frais et administration)
-    oracle: IDIARandomOracle,        // Instance de l'oracle pour l'aléa
-    ticketTemplateId: ByteVec,       // ID du modèle (template) pour les sous-contrats de tickets
-    initialTicketPrice: U256,        // Prix de départ du premier ticket
-    mut maxTicketsFor50Percent: U256, // Seuil de difficulté (défini aléatoirement au début)
-    mut ticketCount: U256,           // Nombre total de tickets achetés dans la partie actuelle
-    mut totalPot: U256,              // Montant total accumulé dans le pot
-    mut redistributionPool: U256,    // Pool d'ALPH réservée aux perdants après explosion
-    mut lastPlayers: [Address; 3],   // Liste circulaire des 3 derniers acheteurs
-    mut lastPlayerIndex: U256,       // Index pour gérer la liste circulaire des joueurs
-    mut isActive: Bool               // État de la partie (En cours ou Terminée)
+    platformAddress: Address,
+    oracle: IDIARandomOracle,
+    ticketTemplateId: ByteVec,
+    initialTicketPrice: U256,
+    mut maxTicketsFor50Percent: U256,
+    mut ticketCount: U256,
+    mut totalTicketsEver: U256,
+    mut currentGameId: U256,
+    mut totalPot: U256,
+    mut redistributionPool: U256,
+    mut lastPlayers: [Address; 2],
+    mut lastPlayerIndex: U256,
+    mut isActive: Bool,
+    mut currentPrice: U256
 ) {
-    // --- Événements pour le suivi (Frontend / Indexeurs) ---
-    event TicketBought(player: Address, ticketIndex: U256, price: U256, currentRisk: U256, ticketContractId: ByteVec)
-    event BombExploded(loser: Address, winner1: Address, winner2: Address, winner3: Address, jackpotAmount: U256, redistributionPool: U256)
-    event RewardsClaimed(ticketContractId: ByteVec, owner: Address, ticketIndex: U256, amount: U256)
-    event GameInitialized(maxTickets: U256)
+    mapping[U256, U256] poolArchive
+    mapping[U256, U256] eligibleCountArchive
 
-    // Dépôt minimum requis pour créer un sous-contrat Ticket (0.1 ALPH)
-    const TICKET_DEPOSIT = 100000000000000000
+    event TicketBought(player: Address, ticketIndex: U256, price: U256, currentRisk: U256, ticketContractId: ByteVec, oracleValue: U256, rawOracle: U256, ticketsEver: U256)
+    event BombExploded(loser: Address, winner1: Address, winner2: Address, jackpotAmount: U256, gameId: U256)
+    event RewardsClaimed(ticketContractId: ByteVec, owner: Address, amount: U256)
+    event GameInitialized(gameId: U256, maxTickets: U256)
+    event FundsWithdrawn(to: Address, amount: U256)
+    event FundsDeposited(from: Address, amount: U256)
 
-    /// Initialise une nouvelle partie (utilisé lors du premier déploiement)
+    const TICKET_DEPOSIT = 100000000000000000 // 0.1 ALPH
+
     @using(updateFields = true, checkExternalCaller = false)
     pub fn initialize() -> () {
         assert!(maxTicketsFor50Percent == 0, 0)
         
         let round = oracle.getLastRound()
-        
         if (round > 0) {
-            let randomData = oracle.getRandomValue(round)
-            let randomValue = u256From32Byte!(randomData.randomness) % 41
-            maxTicketsFor50Percent = 20 + randomValue
+            // let randomData = oracle.getRandomValue(round)
+            // maxTicketsFor50Percent = 20 + (u256From32Byte!(randomData.randomness) % 41)
+            maxTicketsFor50Percent = 5
         } else {
             maxTicketsFor50Percent = 40
         }
@@ -54,142 +54,183 @@ Contract Bomber(
         ticketCount = 0
         totalPot = 0
         redistributionPool = 0
+        currentGameId = 0
+        totalTicketsEver = 0
+        currentPrice = initialTicketPrice
         isActive = true
-        lastPlayers = [platformAddress, platformAddress, platformAddress]
+        lastPlayers = [platformAddress, platformAddress]
         lastPlayerIndex = 0
         
-        emit GameInitialized(maxTicketsFor50Percent)
+        emit GameInitialized(currentGameId, maxTicketsFor50Percent)
     }
 
-    /// Calcule le prix actuel du ticket (augmente de 4% à chaque achat)
     pub fn getCurrentPrice() -> U256 {
-        if (ticketCount == 0) { return initialTicketPrice }
-        let increment = (initialTicketPrice * 4 * ticketCount) / 100
-        return initialTicketPrice + increment
+        return currentPrice
     }
 
-    /// Fonction principale : acheter un ticket
     @using(preapprovedAssets = true, assetsInContract = true, checkExternalCaller = false, updateFields = true)
     pub fn buyTicket() -> ByteVec {
         assert!(isActive, 1)
         let caller = callerAddress!()
-        let currentPrice = getCurrentPrice()
-        
-        // Transfert du prix du ticket vers le contrat
-        transferTokenToSelf!(caller, ALPH, currentPrice)
-        totalPot = totalPot + currentPrice
-        
+        let priceToPay = currentPrice
+
+        transferTokenToSelf!(caller, ALPH, priceToPay)
+        totalPot = totalPot + priceToPay
+
         let ticketIndex = ticketCount
-        ticketCount = ticketCount + 1
+        let uniqueId = totalTicketsEver
+
+        // 1. Calcul du Risque
+        let risk = calculateRisk(ticketIndex + 1)
         
-        // Création du sous-contrat Ticket avec 0.1 ALPH de dépôt minimum
+        // 2. Calcul du Random
+        let lastRound = oracle.getLastRound()
+        let rawOracle = u256From32Byte!(oracle.getRandomValue(lastRound).randomness)
+        let rand = (rawOracle + totalTicketsEver) % 100
+
+        // 3. Incrémentation des compteurs
+        ticketCount = ticketCount + 1
+        totalTicketsEver = totalTicketsEver + 1
+
+        // 4. Mise à jour du prix (+5%)
+        currentPrice = (currentPrice * 10500) / 10000
+
+        // 5. Création du Sous-Contrat Ticket
         let (immFields, mutFields) = Ticket.encodeFields!(
-            selfContractId!(), 
-            caller, 
-            ticketIndex, 
+            selfContractId!(),
+            caller,
+            ticketIndex,
+            uniqueId,
+            currentGameId,
             false
         )
 
         let ticketContractId = copyCreateSubContract!{caller -> ALPH: TICKET_DEPOSIT}(
-            toByteVec!(ticketIndex),
+            toByteVec!(uniqueId),
             ticketTemplateId,
             immFields,
             mutFields
         )
-        
-        // Mise à jour de la liste des derniers joueurs
+
+        // 6. Émission de l'événement
+        emit TicketBought(caller, ticketIndex, priceToPay, risk, ticketContractId, rand, rawOracle % 100, (totalTicketsEver - 1) % 100)
+
+        // 7. Mise à jour des derniers joueurs
         lastPlayers[lastPlayerIndex] = caller
-        lastPlayerIndex = (lastPlayerIndex + 1) % 3
-        
-        let currentRisk = calculateRisk(ticketCount)
-        emit TicketBought(caller, ticketIndex, currentPrice, currentRisk, ticketContractId)
-        
-        if (shouldExplode(currentRisk)) {
+        lastPlayerIndex = (lastPlayerIndex + 1) % 2
+
+        // 8. Vérification explosion
+        if (rand < risk) {
             explode(caller)
         }
-        
+
         return ticketContractId
     }
 
-    /// Calcule le pourcentage de risque actuel (max 50%)
     fn calculateRisk(tickets: U256) -> U256 {
         if (maxTicketsFor50Percent == 0 || tickets == 0) { return 0 }
         let risk = (tickets * 50) / maxTicketsFor50Percent
-        if (risk > 50) { return 50 } else { return risk }
+        return if (risk > 50) 50 else risk
     }
 
-    /// Utilise l'oracle pour décider si la bombe explose
-    fn shouldExplode(riskPercent: U256) -> Bool {
-        let lastRound = oracle.getLastRound()
-        let randomData = oracle.getRandomValue(lastRound)
-        let randomValue = u256From32Byte!(randomData.randomness)
-        let randomNum = (randomValue + ticketCount) % 100
-        return randomNum < riskPercent
-    }
-
-    /// Gère la fin de partie, distribue le jackpot et les frais
     @using(assetsInContract = true, updateFields = true)
     fn explode(loser: Address) -> () {
-        let w1 = lastPlayers[(lastPlayerIndex + 2) % 3]
-        let w2 = lastPlayers[(lastPlayerIndex + 1) % 3]
-        let w3 = lastPlayers[lastPlayerIndex]
-        
-        let platformFee = totalPot / 100
-        let afterPlatform = totalPot - platformFee
-        
-        redistributionPool = (afterPlatform * 10) / 100
-        let jackpotAmount = afterPlatform - redistributionPool
-        
+        let w1 = lastPlayers[(lastPlayerIndex + 1) % 2]
+        let w2 = lastPlayers[lastPlayerIndex]
+
+        // Utilise le vrai solde du contrat pour éviter les problèmes d'arrondi
+        let balance = tokenRemaining!(selfAddress!(), ALPH)
+        let platformFee = balance / 100
+        let afterPlatform = balance - platformFee
+
+        // 35% pour la redistribution aux premiers acheteurs
+        let currentRedistrib = afterPlatform * 35 / 100
+        let jackpotAmount = afterPlatform - currentRedistrib
+
+        // 1/3 des acheteurs éligibles (minimum 1)
+        let eligibleCount = if (ticketCount < 3) 1 else ticketCount / 3
+
+        poolArchive[currentGameId] = currentRedistrib
+        eligibleCountArchive[currentGameId] = eligibleCount
+        redistributionPool = redistributionPool + currentRedistrib
+
+        // Distribution jackpot : 70% w1, 30% w2 (reste exact)
+        let w1Share = jackpotAmount * 70 / 100
+        let w2Share = jackpotAmount - w1Share
+
         transferTokenFromSelf!(platformAddress, ALPH, platformFee)
-        transferTokenFromSelf!(w1, ALPH, (jackpotAmount * 60) / 100)
-        transferTokenFromSelf!(w2, ALPH, (jackpotAmount * 25) / 100)
-        transferTokenFromSelf!(w3, ALPH, (jackpotAmount * 14) / 100)
-        
+        transferTokenFromSelf!(w1, ALPH, w1Share)
+        transferTokenFromSelf!(w2, ALPH, w2Share)
+
         isActive = false
-        emit BombExploded(loser, w1, w2, w3, jackpotAmount, redistributionPool)
+        emit BombExploded(loser, w1, w2, jackpotAmount, currentGameId)
     }
 
-    /// Permet aux perdants de réclamer une part de la redistribution pool
-    @using(assetsInContract = true, checkExternalCaller = true)
-    pub fn claimFromTicket(ticketIndex: U256, owner: Address) -> U256 {
-        let expectedTicketId = subContractId!(toByteVec!(ticketIndex))
-        checkCaller!(callerContractId!() == expectedTicketId, 403)
-        
-        assert!(!isActive, 3)
-        
-        let ticketsAfter = ticketCount - ticketIndex
-        let totalShares = (ticketCount * (ticketCount + 1)) / 2
-        let playerShare = (redistributionPool * ticketsAfter) / totalShares
-        
-        assert!(playerShare > 0, 6)
-        
+    @using(assetsInContract = true, checkExternalCaller = true, updateFields = true)
+    pub fn claimFromTicket(ticketIndex: U256, uniqueId: U256, owner: Address, ticketGameId: U256) -> U256 {
+        checkCaller!(callerContractId!() == subContractId!(toByteVec!(uniqueId)), 403)
+
+        let totalPoolForGame = poolArchive[ticketGameId]
+        let eligibleCount = eligibleCountArchive[ticketGameId]
+
+        assert!(totalPoolForGame > 0, 404)
+        assert!(ticketIndex < eligibleCount, 7)
+
+        let playerShare = totalPoolForGame / eligibleCount
+
+        redistributionPool = redistributionPool - playerShare
+
         transferTokenFromSelf!(owner, ALPH, playerShare)
-        emit RewardsClaimed(callerContractId!(), owner, ticketIndex, playerShare)
-        
+        emit RewardsClaimed(callerContractId!(), owner, playerShare)
+
         return playerShare
     }
 
-    /// Retourne les infos essentielles du jeu pour l'interface utilisateur
-    pub fn getGameInfo() -> (U256, U256, U256, U256, Bool) {
-        return (maxTicketsFor50Percent, ticketCount, calculateRisk(ticketCount), getCurrentPrice(), isActive)
-    }
-
-    /// Relance une nouvelle partie (réservé à la plateforme)
     @using(updateFields = true, checkExternalCaller = true)
     pub fn restartGame() -> () {
         checkCaller!(callerAddress!() == platformAddress, 403)
         assert!(!isActive, 4)
-        
+
         ticketCount = 0
         totalPot = 0
-        
+        currentGameId = currentGameId + 1
+        currentPrice = initialTicketPrice
+
         let round = oracle.getLastRound()
-        let randomData = oracle.getRandomValue(round)
-        let randomValue = u256From32Byte!(randomData.randomness) % 41
-        
-        maxTicketsFor50Percent = 20 + randomValue
+        let randomValue = u256From32Byte!(oracle.getRandomValue(round).randomness)
+        maxTicketsFor50Percent = 20 + (randomValue % 41)
+
         isActive = true
-        
-        emit GameInitialized(maxTicketsFor50Percent)
+        emit GameInitialized(currentGameId, maxTicketsFor50Percent)
+    }
+
+    // Retrait d'urgence par la plateforme
+    @using(assetsInContract = true, checkExternalCaller = true)
+    pub fn withdrawFunds(amount: U256) -> () {
+        checkCaller!(callerAddress!() == platformAddress, 403)
+        let contractBalance = tokenRemaining!(selfAddress!(), ALPH)
+        assert!(contractBalance >= amount, 5)
+        transferTokenFromSelf!(platformAddress, ALPH, amount)
+        emit FundsWithdrawn(platformAddress, amount)
+    }
+
+    // Dépôt de fonds par la plateforme
+    @using(preapprovedAssets = true, assetsInContract = true, checkExternalCaller = true)
+    pub fn depositFunds(amount: U256) -> () {
+        checkCaller!(callerAddress!() == platformAddress, 403)
+        assert!(amount > 0, 6)
+        transferTokenToSelf!(platformAddress, ALPH, amount)
+        emit FundsDeposited(platformAddress, amount)
+    }
+
+    pub fn getGameInfo() -> (U256, U256, U256, U256, Bool, U256) {
+        return (
+            currentGameId,
+            ticketCount,
+            totalPot,
+            currentPrice,
+            isActive,
+            redistributionPool
+        )
     }
 }

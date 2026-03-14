@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { useWallet } from '@alephium/web3-react'
-import { useBomberGame } from '@/hooks/useBomberGame'
+import { useBomberGameContext } from '@/contexts/BomberGameContext'
 import { useToast } from '@/hooks/useToast'
 import { ToastContainer } from '@/components/ui/Toast'
 import { claimRewards } from '@/services/bomber.service'
@@ -8,13 +8,16 @@ import styles from '../../styles/ClaimRewards.module.css'
 
 export const ClaimRewards = () => {
   const { connectionStatus, signer } = useWallet()
-  const { gameData, myTickets, isLoadingHistory, markTicketClaimed } = useBomberGame()
+  const { gameData, myTickets, isLoadingTickets, markTicketClaimed } = useBomberGameContext()
   const { toasts, addToast, removeToast } = useToast()
   const [claimingIndex, setClaimingIndex] = useState<bigint | null>(null)
   const [claimedAmounts, setClaimedAmounts] = useState<Record<string, number>>({})
 
-  // ── 1. LOADING en priorité absolue — avant tout autre check ─────────────────
-  if (isLoadingHistory) {
+  // Jeu actif → invisible
+  if (!gameData || gameData.isActive || gameData.isLoading) return null
+
+  // ── Chargement en cours ───────────────────────────────────────────────────────
+  if (isLoadingTickets) {
     return (
       <div className={styles.container}>
         <div className={styles.header}>
@@ -22,15 +25,26 @@ export const ClaimRewards = () => {
           <span className={styles.headerTitle}>Your Rewards</span>
         </div>
         <div className={styles.loadingMsg}>
-          ⏳ Loading rewards...
+          <span className={styles.loadingSpinner} />
+          Checking your tickets...
         </div>
       </div>
     )
   }
 
-  // ── 2. Jeu actif ou pas encore prêt → rien ───────────────────────────────────
-  if (!gameData || gameData.isActive || gameData.isLoading) return null
+  // Aucun ticket → invisible
   if (myTickets.length === 0) return null
+
+  const estimateReward = (ticketIndex: bigint): number => {
+    const totalTickets = Number(gameData.ticketCount)
+    const idx = Number(ticketIndex)
+    if (totalTickets === 0 || idx >= totalTickets) return 0
+    const redistributionPool = gameData.redistributionPool ?? 0n
+    if (redistributionPool === 0n) return 0
+    const ticketsAfter = totalTickets - idx
+    const totalShares = (totalTickets * (totalTickets + 1)) / 2
+    return Math.max(0, (Number(redistributionPool) / 1e18 * ticketsAfter) / totalShares)
+  }
 
   const handleClaim = async (ticketIndex: bigint, ticketContractId: string) => {
     if (!signer || connectionStatus !== 'connected') return
@@ -42,32 +56,19 @@ export const ClaimRewards = () => {
       markTicketClaimed(ticketIndex)
       addToast(`Ticket #${ticketIndex} claimed!`, 'success', `+${reward.toFixed(3)} ALPH · Tx: ${result.txId.slice(0, 12)}...`)
     } catch (e: any) {
-      addToast(`Claim failed for ticket #${ticketIndex}`, 'error', e.message?.slice(0, 80))
+      addToast(`Claim failed`, 'error', e.message?.slice(0, 80))
     } finally {
       setClaimingIndex(null)
     }
   }
 
-  const estimateReward = (ticketIndex: bigint): number => {
-    const totalTickets = Number(gameData.ticketCount)
-    const idx = Number(ticketIndex)
-    if (totalTickets === 0 || idx >= totalTickets) return 0
-    const redistributionPool = gameData.redistributionPool ?? 0n
-    if (redistributionPool === 0n) return 0
-    const ticketsAfter = totalTickets - idx
-    const totalShares = (totalTickets * (totalTickets + 1)) / 2
-    const pool = Number(redistributionPool) / 1e18
-    return Math.max(0, (pool * ticketsAfter) / totalShares)
-  }
-
   const unclaimedTickets = myTickets.filter(t => !t.claimed)
-  const claimedTickets = myTickets.filter(t => t.claimed)
-  const totalReward = unclaimedTickets.reduce((sum, t) => sum + estimateReward(t.ticketIndex), 0)
+  const claimedTickets   = myTickets.filter(t => t.claimed)
+  const totalReward      = unclaimedTickets.reduce((sum, t) => sum + estimateReward(t.ticketIndex), 0)
 
   return (
     <>
       <ToastContainer toasts={toasts} onRemove={removeToast} />
-
       <div className={styles.container}>
         <div className={styles.header}>
           <span className={styles.headerIcon}>💎</span>
@@ -75,15 +76,13 @@ export const ClaimRewards = () => {
           {unclaimedTickets.length > 0 && (
             <span className={styles.ticketCount}>
               {unclaimedTickets.length} to claim
-              {totalReward > 0 && (
-                <span className={styles.totalReward}>· ~{totalReward.toFixed(3)} ALPH</span>
-              )}
+              {totalReward > 0 && <span className={styles.totalReward}> · ~{totalReward.toFixed(3)} ALPH</span>}
             </span>
           )}
         </div>
 
         <div className={styles.ticketList}>
-          {unclaimedTickets.map((ticket) => {
+          {unclaimedTickets.map(ticket => {
             const reward = estimateReward(ticket.ticketIndex)
             const isClaiming = claimingIndex === ticket.ticketIndex
             return (
@@ -106,7 +105,7 @@ export const ClaimRewards = () => {
             )
           })}
 
-          {claimedTickets.map((ticket) => {
+          {claimedTickets.map(ticket => {
             const amount = claimedAmounts[ticket.ticketIndex.toString()]
             return (
               <div key={ticket.ticketIndex.toString()} className={`${styles.ticketRow} ${styles.ticketRowClaimed}`}>

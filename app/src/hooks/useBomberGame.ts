@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useWallet } from '@alephium/web3-react'
 import { web3 } from '@alephium/web3'
-import { getGameInfo, hasTicketClaimed, BOMBER_CONTRACT_ADDRESS } from '@/services/bomber.service'
+import { getGameInfo, hasTicketClaimed, getTotalTransactions, BOMBER_CONTRACT_ADDRESS } from '@/services/bomber.service'
 
 export interface GameData {
   maxTicketsFor50Percent: bigint
@@ -33,6 +33,11 @@ export interface Activity {
   amount?: number
 }
 
+const EV_TICKET_BOUGHT    = 0
+const EV_BOMB_EXPLODED    = 1
+const EV_REWARDS_CLAIMED  = 2
+const EV_GAME_INITIALIZED = 3
+
 const INITIAL_GAME_DATA: GameData = {
   maxTicketsFor50Percent: 0n,
   ticketCount: 0n,
@@ -45,7 +50,8 @@ const INITIAL_GAME_DATA: GameData = {
   error: null
 }
 
-const POLLING_INTERVAL = 15000
+// ✅ Polling réduit à 5s pour une UI plus réactive
+const POLLING_INTERVAL = 5000
 
 async function fetchContractEvents(contractAddress: string, start: number, limit = 20) {
   try {
@@ -56,14 +62,16 @@ async function fetchContractEvents(contractAddress: string, start: number, limit
     )
     return response
   } catch (e: any) {
-    if (e.message?.includes('404') || e.message?.includes('429')) return null
-    console.error('❌ fetchContractEvents error:', e)
+    if (e.message?.includes('429')) return null
+    if (e.message?.includes('404')) {
+      console.log(`📭 [POLL] Pas d'events à partir de l'index ${start} (404 normal)`)
+      return null
+    }
+    // console.error('❌ fetchContractEvents error:', e)
     return null
   }
 }
 
-// ── Charge tous les events par batch ─────────────────────────────────────────
-// On commence à start=0 et on incrémente jusqu'à ne plus avoir de réponse
 async function loadAllEvents(contractAddress: string) {
   const allEvents: any[] = []
   let start = 0
@@ -71,15 +79,13 @@ async function loadAllEvents(contractAddress: string) {
 
   while (true) {
     const response = await fetchContractEvents(contractAddress, start, batchSize)
-    // 404 ou null = plus d'events à cette position
     if (!response || !response.events || response.events.length === 0) break
     allEvents.push(...response.events)
     start += response.events.length
-    // Si on a reçu moins que batchSize, on est à la fin
     if (response.events.length < batchSize) break
   }
 
-  console.log(`📚 Loaded ${allEvents.length} events total (start index for polling: ${start})`)
+  console.log(`📚 Loaded ${allEvents.length} events total`)
   return { events: allEvents, count: start }
 }
 
@@ -107,10 +113,14 @@ export function useBomberGame() {
   const [recentActivities, setRecentActivities] = useState<Activity[]>([])
   const [myTickets, setMyTickets] = useState<MyTicket[]>([])
   const [isLoadingHistory, setIsLoadingHistory] = useState(true)
+  const [roundNumber, setRoundNumber] = useState<number>(1)
+  const [totalTransactions, setTotalTransactions] = useState<number>(0)
 
   const lastEventIndexRef = useRef<number>(-1)
   const pollingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const isMountedRef = useRef(true)
+  // ✅ Flag pour forcer un poll immédiat (déclenché après un achat)
+  const forceNextPollRef = useRef(false)
 
   const refreshGameData = useCallback(async () => {
     try {
@@ -139,18 +149,24 @@ export function useBomberGame() {
     if (response && response.events && response.events.length > 0) {
       let hasNewTicket = false
       let hasExplosion = false
+      let hasRestart = false
 
       response.events.forEach((event, i) => {
         const absoluteIndex = startIndex + i
 
-        if (event.eventIndex === 0) {
+        if (event.eventIndex === EV_TICKET_BOUGHT) {
           const fields = event.fields
           const player = fields[0].value as string
           const ticketIndex = BigInt(fields[1].value as string)
           const price = BigInt(fields[2].value as string)
           const currentRisk = BigInt(fields[3].value as string)
           const ticketContractId = fields[4].value as string
+          const oracleValue = fields[5].value as string
+          const rawOracle = fields[6].value as string
+          const ticketsEver = fields[7].value as string
 
+          console.log(`🎲 [POLL][ORACLE] Ticket #${ticketIndex} | Rand: ${oracleValue} | RawOracle%100: ${rawOracle} | TicketsEver%100: ${ticketsEver} | Risque: ${currentRisk}%`)
+          
           if (isMountedRef.current) {
             setRecentActivities(prev => {
               const exists = prev.some(a => a.ticketIndex === Number(ticketIndex) && a.action === 'bought_ticket')
@@ -177,7 +193,7 @@ export function useBomberGame() {
           hasNewTicket = true
         }
 
-        if (event.eventIndex === 1) {
+        if (event.eventIndex === EV_BOMB_EXPLODED) {
           const loser = event.fields[0].value as string
           if (isMountedRef.current) {
             setRecentActivities(prev => {
@@ -189,15 +205,31 @@ export function useBomberGame() {
           hasExplosion = true
         }
 
+        if (event.eventIndex === EV_GAME_INITIALIZED) {
+          hasRestart = true
+          setRoundNumber(prev => prev + 1)
+        }
+
         lastEventIndexRef.current = absoluteIndex
       })
 
-      if (hasNewTicket || hasExplosion) await refreshGameData()
+      if (hasNewTicket || hasExplosion || hasRestart) {
+        await refreshGameData()
+        getTotalTransactions().then(n => {
+          if (isMountedRef.current && n > 0) setTotalTransactions(n)
+        })
+      }
+
       if (hasExplosion) {
         setMyTickets(prev => {
           if (prev.length > 0) refreshMyTicketsClaimed(prev)
           return prev
         })
+      }
+
+      if (hasRestart) {
+        setRecentActivities([])
+        setMyTickets([])
       }
     }
 
@@ -206,41 +238,66 @@ export function useBomberGame() {
     }
   }, [account?.address, refreshGameData, refreshMyTicketsClaimed])
 
+  // ✅ forceRefresh : annule le timer en cours, poll immédiatement, puis reprend le cycle normal
+  const forceRefresh = useCallback(async () => {
+    if (pollingTimerRef.current) {
+      clearTimeout(pollingTimerRef.current)
+      pollingTimerRef.current = null
+    }
+    await refreshGameData()
+    await pollEvents()
+  }, [refreshGameData, pollEvents])
+
   useEffect(() => {
     isMountedRef.current = true
 
     const init = async () => {
       setIsLoadingHistory(true)
-
       await refreshGameData()
 
-      // ✅ FIX : on part de start=0 et on charge par batch jusqu'au 404
-      // Plus besoin de getEventCount qui retournait 0
+      getTotalTransactions().then(n => {
+        if (isMountedRef.current && n > 0) setTotalTransactions(n)
+      })
+
       const { events, count } = await loadAllEvents(BOMBER_CONTRACT_ADDRESS)
 
       if (isMountedRef.current && events.length > 0) {
         const activities: Activity[] = []
         const myTicketsFromHistory: MyTicket[] = []
 
-        // Trouve le début du round actuel (après la dernière explosion)
-        let lastExplosionIndex = -1
+        let gameInitCount = 0
+        let currentRoundStart = 0
+
         events.forEach((event, i) => {
-          if (event.eventIndex === 1) lastExplosionIndex = i
+          if (event.eventIndex === EV_GAME_INITIALIZED) {
+            gameInitCount++
+            currentRoundStart = i + 1
+          }
         })
-        const currentRoundStart = lastExplosionIndex + 1
+
+        setRoundNumber(gameInitCount)
 
         for (let i = 0; i < events.length; i++) {
           const event = events[i]
           const isCurrentRound = i >= currentRoundStart
 
-          if (event.eventIndex === 0) {
+          if (event.eventIndex === EV_TICKET_BOUGHT && isCurrentRound) {
             const fields = event.fields
             const player = fields[0].value as string
             const ticketIndex = BigInt(fields[1].value as string)
             const price = BigInt(fields[2].value as string)
             const currentRisk = BigInt(fields[3].value as string)
             const ticketContractId = fields[4].value as string
+            const oracleValue = fields[5].value as string
+            const rawOracle = fields[6].value as string
+            const ticketsEver = fields[7].value as string
 
+            console.log(`🎲 [ORACLE] Rand: ${oracleValue} | RawOracle%100: ${rawOracle} | TicketsEver%100: ${ticketsEver} | Risque: ${currentRisk}`)
+
+            if (BigInt(oracleValue) < currentRisk) {
+              console.log("🧨 La bombe aurait dû exploser ici !")
+            }
+            
             activities.push({
               player, action: 'bought_ticket',
               price: Number(price) / 1e18,
@@ -250,7 +307,7 @@ export function useBomberGame() {
               ticketContractId
             })
 
-            if (isCurrentRound && account?.address && player === account.address) {
+            if (account?.address && player === account.address) {
               myTicketsFromHistory.push({
                 ticketIndex, ticketContractId,
                 price: Number(price) / 1e18,
@@ -259,7 +316,7 @@ export function useBomberGame() {
             }
           }
 
-          if (event.eventIndex === 1) {
+          if (event.eventIndex === EV_BOMB_EXPLODED && isCurrentRound) {
             activities.push({
               player: event.fields[0].value as string,
               action: 'exploded', timestamp: 0, risk: 100
@@ -270,7 +327,6 @@ export function useBomberGame() {
         setRecentActivities(activities.slice(-10).reverse())
 
         if (myTicketsFromHistory.length > 0) {
-          console.log(`🎫 ${myTicketsFromHistory.length} tickets found, checking claimed status...`)
           const withStatus = await checkTicketsSequentially(
             myTicketsFromHistory.sort((a, b) => Number(a.ticketIndex - b.ticketIndex)),
             () => isMountedRef.current
@@ -305,5 +361,15 @@ export function useBomberGame() {
     )
   }, [])
 
-  return { gameData, recentActivities, myTickets, isLoadingHistory, refreshGameData, markTicketClaimed }
+  return {
+    gameData,
+    recentActivities,
+    myTickets,
+    isLoadingHistory,
+    roundNumber,
+    totalTransactions,
+    refreshGameData,
+    forceRefresh,   
+    markTicketClaimed
+  }
 }

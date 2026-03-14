@@ -3,7 +3,7 @@ import { useBomberGame } from '@/hooks/useBomberGame'
 import styles from '../../styles/GameStats.module.css'
 
 export const GameStats = () => {
-  const { gameData } = useBomberGame()
+  const { gameData, roundNumber, totalTransactions } = useBomberGame()
 
   if (!gameData || gameData.isLoading) {
     return (
@@ -19,12 +19,17 @@ export const GameStats = () => {
     return <div className={styles.error}>❌ {gameData.error}</div>
   }
 
-  // ✅ Fix: utilise totalPot (pas potAmount qui n'existe pas)
+  // ✅ totalPot = pot du round actuel
   const potInAlph = gameData.totalPot
     ? (Number(gameData.totalPot) / 1e18).toFixed(2)
     : '0.00'
 
-  const ticketCount = gameData.ticketCount?.toString() ?? '0'
+  // redistributionPool = rewards non claimés des anciens rounds
+  const redistributionInAlph = gameData.redistributionPool && gameData.redistributionPool > 0n
+    ? (Number(gameData.redistributionPool) / 1e18).toFixed(2)
+    : null
+
+  const ticketCount = Number(gameData.ticketCount ?? 0)
   const currentRisk = Number(gameData.currentRisk ?? 0)
 
   const riskColor = currentRisk >= 40
@@ -35,7 +40,6 @@ export const GameStats = () => {
 
   return (
     <div className={styles.container}>
-
       <div className={`${styles.statusBadge} ${gameData.isActive ? styles.active : styles.terminated}`}>
         <span className={styles.statusDot} />
         {gameData.isActive ? 'Live' : 'Terminated'}
@@ -51,6 +55,7 @@ export const GameStats = () => {
         </div>
       )}
 
+      {/* Current Pot */}
       <div className={styles.statRow}>
         <div className={styles.statLabel}>💰 Current Pot</div>
         <div className={styles.statValue} style={{ color: 'var(--prize-green)' }}>
@@ -58,15 +63,54 @@ export const GameStats = () => {
         </div>
       </div>
 
+      {/* Unclaimed Rewards — seulement si > 0 */}
+      {redistributionInAlph && (
+        <>
+          <div className={styles.divider} />
+          <div className={styles.statRow}>
+            <div className={styles.statLabel}>
+              💎 Unclaimed Rewards
+              <span className={styles.statHint}>from prev. rounds</span>
+            </div>
+            <div className={styles.statValue} style={{ color: 'var(--warning-amber)' }}>
+              {redistributionInAlph} <span className={styles.statUnit}>ALPH</span>
+            </div>
+          </div>
+        </>
+      )}
+
       <div className={styles.divider} />
 
+      {/* Round Number */}
       <div className={styles.statRow}>
-        <div className={styles.statLabel}>🎫 Round Number</div>
-        <div className={styles.statValue}>#{ticketCount}</div>
+        <div className={styles.statLabel}>🎮 Round Number</div>
+        <div className={styles.statValue}>#{roundNumber}</div>
       </div>
 
       <div className={styles.divider} />
 
+      {/* Tickets this round */}
+      <div className={styles.statRow}>
+        <div className={styles.statLabel}>🎫 Tickets This Round</div>
+        <div className={styles.statValue}>{ticketCount}</div>
+      </div>
+
+      <div className={styles.divider} />
+
+      {/* Total transactions on-chain */}
+      <div className={styles.statRow}>
+        <div className={styles.statLabel}>
+          📊 Total Transactions
+          <span className={styles.statHint}>all-time on-chain</span>
+        </div>
+        <div className={styles.statValue} style={{ color: 'var(--text-secondary)' }}>
+          {totalTransactions > 0 ? totalTransactions : '—'}
+        </div>
+      </div>
+
+      <div className={styles.divider} />
+
+      {/* Current Risk */}
       <div className={styles.statRow}>
         <div className={styles.statLabel}>⚠️ Current Risk</div>
         <div className={styles.statValue} style={{ color: riskColor }}>
@@ -84,7 +128,6 @@ export const GameStats = () => {
           }}
         />
       </div>
-
     </div>
   )
 }

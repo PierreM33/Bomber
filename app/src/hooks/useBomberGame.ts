@@ -195,6 +195,13 @@ export function useBomberGame() {
 
         if (event.eventIndex === EV_BOMB_EXPLODED) {
           const loser = event.fields[0].value as string
+          const w1 = event.fields[1].value as string
+          const w2 = event.fields[2].value as string
+          const jackpot = event.fields[3].value as string
+          const gameId = event.fields[4].value as string
+
+          console.log(`💥 [BOMB] Loser: ${loser.slice(0,8)}... | W1: ${w1.slice(0,8)}... | W2: ${w2.slice(0,8)}... | Jackpot: ${(Number(jackpot)/1e18).toFixed(4)} ALPH | GameId: ${gameId}`)
+
           if (isMountedRef.current) {
             setRecentActivities(prev => {
               const exists = prev.some(a => a.player === loser && a.action === 'exploded')
@@ -317,8 +324,11 @@ export function useBomberGame() {
           }
 
           if (event.eventIndex === EV_BOMB_EXPLODED && isCurrentRound) {
+            const loser = event.fields[0].value as string
+            const jackpot = event.fields[3].value as string
+            console.log(`💥 [BOMB_HISTORY] Loser: ${loser.slice(0,8)}... | Jackpot: ${(Number(jackpot)/1e18).toFixed(4)} ALPH`)
             activities.push({
-              player: event.fields[0].value as string,
+              player: loser,
               action: 'exploded', timestamp: 0, risk: 100
             })
           }

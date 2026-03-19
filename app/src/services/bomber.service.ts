@@ -112,7 +112,8 @@ export async function buyTicket(signer: SignerProvider): Promise<{ txId: string;
       const price = BigInt(info.currentPrice)
       const subContractDeposit = ONE_ALPH / 10n
       const slippage = (price * 30n) / 100n
-      const totalAmount = price + subContractDeposit + slippage
+      const mapDeposit = ONE_ALPH / 10n  // 0.1 ALPH pour le storage des mappings
+      const totalAmount = price + subContractDeposit + slippage + mapDeposit
       const attoAlphToSend = totalAmount + BigInt(DUST_AMOUNT)
 
       const result = await BuyTicketScript.execute(signer, {

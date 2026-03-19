@@ -120,9 +120,9 @@ Contract Bomber(
         lastPlayerIndex = (lastPlayerIndex + 1) % 2
 
         // 8. Vérification explosion
-        if (rand < risk) {
-            explode(caller)
-        }
+    if (rand < risk || ticketCount >= 5) {
+        explode(caller)
+    }
 
         return ticketContractId
     }
@@ -133,38 +133,34 @@ Contract Bomber(
         return if (risk > 50) 50 else risk
     }
 
-    @using(assetsInContract = true, updateFields = true)
-    fn explode(loser: Address) -> () {
-        let w1 = lastPlayers[(lastPlayerIndex + 1) % 2]
-        let w2 = lastPlayers[lastPlayerIndex]
+@using(assetsInContract = true, updateFields = true)
+fn explode(loser: Address) -> () {
+    let w1 = lastPlayers[(lastPlayerIndex + 1) % 2]
+    let w2 = lastPlayers[lastPlayerIndex]
 
-        // Utilise le vrai solde du contrat pour éviter les problèmes d'arrondi
-        let balance = tokenRemaining!(selfAddress!(), ALPH)
-        let platformFee = balance / 100
-        let afterPlatform = balance - platformFee
+    let balance = tokenRemaining!(selfAddress!(), ALPH)
+    let platformFee = balance / 100
+    let afterPlatform = balance - platformFee
 
-        // 35% pour la redistribution aux premiers acheteurs
-        let currentRedistrib = afterPlatform * 35 / 100
-        let jackpotAmount = afterPlatform - currentRedistrib
+    let currentRedistrib = afterPlatform * 35 / 100
+    let jackpotAmount = afterPlatform - currentRedistrib
 
-        // 1/3 des acheteurs éligibles (minimum 1)
-        let eligibleCount = if (ticketCount < 3) 1 else ticketCount / 3
+    let eligibleCount = if (ticketCount < 3) 1 else ticketCount / 3
 
-        poolArchive[currentGameId] = currentRedistrib
-        eligibleCountArchive[currentGameId] = eligibleCount
-        redistributionPool = redistributionPool + currentRedistrib
+    poolArchive[currentGameId] = currentRedistrib
+    eligibleCountArchive[currentGameId] = eligibleCount
+    redistributionPool = redistributionPool + currentRedistrib
 
-        // Distribution jackpot : 70% w1, 30% w2 (reste exact)
-        let w1Share = jackpotAmount * 70 / 100
-        let w2Share = jackpotAmount - w1Share
+    let w1Share = jackpotAmount * 70 / 100
+    let w2Share = jackpotAmount - w1Share
 
-        transferTokenFromSelf!(platformAddress, ALPH, platformFee)
-        transferTokenFromSelf!(w1, ALPH, w1Share)
-        transferTokenFromSelf!(w2, ALPH, w2Share)
+    transferTokenFromSelf!(platformAddress, ALPH, platformFee)
+    transferTokenFromSelf!(w1, ALPH, w1Share)
+    transferTokenFromSelf!(w2, ALPH, w2Share)
 
-        isActive = false
-        emit BombExploded(loser, w1, w2, jackpotAmount, currentGameId)
-    }
+    isActive = false
+    emit BombExploded(loser, w1, w2, jackpotAmount, currentGameId)
+}
 
     @using(assetsInContract = true, checkExternalCaller = true, updateFields = true)
     pub fn claimFromTicket(ticketIndex: U256, uniqueId: U256, owner: Address, ticketGameId: U256) -> U256 {

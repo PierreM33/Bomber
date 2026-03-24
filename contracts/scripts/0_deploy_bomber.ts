@@ -78,7 +78,7 @@ const deployBomber: DeployFunction<Settings> = async (
             isActive: false,
             currentPrice: ONE_ALPH
         },
-        initialAttoAlphAmount: ONE_ALPH,
+        initialAttoAlphAmount: 5n * ONE_ALPH,
         deployAddressIndex: targetGroup
     } as any)
     

@@ -133,34 +133,49 @@ Contract Bomber(
         return if (risk > 50) 50 else risk
     }
 
-@using(assetsInContract = true, updateFields = true)
-fn explode(loser: Address) -> () {
-    let w1 = lastPlayers[(lastPlayerIndex + 1) % 2]
-    let w2 = lastPlayers[lastPlayerIndex]
+    @using(assetsInContract = true, updateFields = true)
+    fn explode(loser: Address) -> () {
+        let currentBalance = tokenRemaining!(selfAddress!(), ALPH)
+        
+        // 1. Réserve de sécurité FIXE pour le stockage (0.5 ALPH)
+        // Cela évite l'erreur de "Out of ALPH for storage deposit"
+        let safetyBuffer = 500000000000000000 
+        
+        // Sécurité : si le contrat a moins que la réserve, on crash proprement avant l'erreur storage
+        assert!(currentBalance > safetyBuffer, 10)
+        
+        // 2. Montant réellement distribuable
+        let liquidBalance = currentBalance - safetyBuffer
 
-    let balance = tokenRemaining!(selfAddress!(), ALPH)
-    let platformFee = balance / 100
-    let afterPlatform = balance - platformFee
+        // 3. Calcul des parts (avec une marge de 1% qui reste dans le contrat)
+        let platformFee = liquidBalance / 100            // 1% pour ton wallet platform
+        let contractReserve = liquidBalance / 100       // 1% qui RESTE dans le contrat (marge)
+        
+        let afterFees = liquidBalance - platformFee - contractReserve
 
-    let currentRedistrib = afterPlatform * 35 / 100
-    let jackpotAmount = afterPlatform - currentRedistrib
+        // 4. Répartition Jackpot vs Redistribution
+        let currentRedistrib = (afterFees * 35) / 100
+        let jackpotAmount = afterFees - currentRedistrib
 
-    let eligibleCount = if (ticketCount < 3) 1 else ticketCount / 3
+        // 5. Archivage pour les Claims futurs
+        let eligibleCount = if (ticketCount < 3) 1 else ticketCount / 3
+        poolArchive[currentGameId] = currentRedistrib
+        eligibleCountArchive[currentGameId] = eligibleCount
+        redistributionPool = redistributionPool + currentRedistrib
 
-    poolArchive[currentGameId] = currentRedistrib
-    eligibleCountArchive[currentGameId] = eligibleCount
-    redistributionPool = redistributionPool + currentRedistrib
+        // 6. Calcul des parts des gagnants (70/30 du Jackpot)
+        let w1Share = (jackpotAmount * 70) / 100
+        let w2Share = jackpotAmount - w1Share
 
-    let w1Share = jackpotAmount * 70 / 100
-    let w2Share = jackpotAmount - w1Share
+        // 7. Envois des fonds
+        transferTokenFromSelf!(platformAddress, ALPH, platformFee)
+        transferTokenFromSelf!(lastPlayers[(lastPlayerIndex + 1) % 2], ALPH, w1Share) // Winner 1
+        transferTokenFromSelf!(lastPlayers[lastPlayerIndex], ALPH, w2Share)           // Winner 2
 
-    transferTokenFromSelf!(platformAddress, ALPH, platformFee)
-    transferTokenFromSelf!(w1, ALPH, w1Share)
-    transferTokenFromSelf!(w2, ALPH, w2Share)
-
-    isActive = false
-    emit BombExploded(loser, w1, w2, jackpotAmount, currentGameId)
-}
+        // 8. Fermeture du round
+        isActive = false
+        emit BombExploded(loser, lastPlayers[(lastPlayerIndex + 1) % 2], lastPlayers[lastPlayerIndex], jackpotAmount, currentGameId)
+    }
 
     @using(assetsInContract = true, checkExternalCaller = true, updateFields = true)
     pub fn claimFromTicket(ticketIndex: U256, uniqueId: U256, owner: Address, ticketGameId: U256) -> U256 {
